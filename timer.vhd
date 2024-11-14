@@ -2,6 +2,15 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
+-- Uncomment the following library declaration if using
+-- arithmetic functions with Signed or Unsigned values
+--use IEEE.NUMERIC_STD.ALL;
+
+-- Uncomment the following library declaration if instantiating
+-- any Xilinx leaf cells in this code.
+--library UNISIM;
+--use UNISIM.VComponents.all;
+
 entity timer is
 port (
     clk, rst: in std_logic;
@@ -21,6 +30,8 @@ signal b2_prev : std_logic := '0';
 signal b2_edge : std_logic := '0';  
 signal b3_prev : std_logic := '0';  
 signal b3_edge : std_logic := '0';  
+signal b4_prev : std_logic := '0';  
+signal b4_edge : std_logic := '0';  
 
 signal count_general : std_logic_vector(3 downto 0);
 signal count_1, count_2, count_3, count_4, count_5, count_6 : std_logic_vector(3 downto 0);
@@ -88,6 +99,10 @@ finite_state_machine: process(clk, rst) begin
                     else
                         hour <= hour + 1;
                     end if;
+                elsif b4_edge = '1' then
+                    state <= x"4";
+                    init_counter_hour <= '1';
+                    clock_counting <= '1';
                 end if;         
             when x"2" =>
                 print_time <= '0';
@@ -119,7 +134,6 @@ finite_state_machine: process(clk, rst) begin
                     state <= x"4";
                     clock_counting <= '1';
                 end if;
-               
             when x"4" =>
                 print_time <= '1';
                 set_alarm <= '0';
@@ -130,6 +144,8 @@ finite_state_machine: process(clk, rst) begin
                 check_alarm <= '0';
                 if b1_edge = '1' then
                     state <= x"1";
+                    hour <= to_integer(unsigned(count_1)) * 10 + to_integer(unsigned(count_2));
+                    minute <= to_integer(unsigned(count_3)) * 10 + to_integer(unsigned(count_4));
                     clock_counting <= '0';
                 elsif b2_edge = '1' then
                     state <= x"5";
@@ -205,6 +221,12 @@ finite_state_machine: process(clk, rst) begin
                 check_alarm <= '1';    
                 if alarm_ringing = '1' then
                     state <= x"9";
+                elsif b2_edge = '1' then 
+                    state <= x"A";
+                    print_seconds <= '1';
+                elsif b4_edge = '1' then 
+                    state <= x"4";
+                    check_alarm <= '0';   
                 end if;
             when x"9" =>     
                 print_time <= '1';
@@ -217,6 +239,22 @@ finite_state_machine: process(clk, rst) begin
                     state <= x"4";
                     check_alarm <= '0';
                 end if;
+            when x"A" =>
+                print_time <= '1';
+                set_alarm <= '0';
+                init_counter_hour <= '0';
+                init_counter_minutes <= '0';
+                print_seconds <= '1';
+                check_alarm <= '1';    
+                if alarm_ringing = '1' then
+                    state <= x"9";
+                elsif b2_edge = '1' then 
+                    state <= x"8";
+                    print_seconds <= '0';
+                elsif b4_edge = '1' then 
+                    state <= x"4";
+                    check_alarm <= '0';   
+                end if;
             when others => null;        
             end case;
     end if;
@@ -227,14 +265,16 @@ principal_counter: process(clk, rst) begin
     if rst = '1' then
         carry6 <= '0';
         count_general <= x"0";
-    end if;
-    if rising_edge(clk) and clock_counting = '1' then
-        if unsigned(count_general) = 9 then
-            count_general <= x"0";
-            carry6 <= '1';
-        else    
-            count_general <= std_logic_vector(unsigned(count_general) + 1);
-            carry6 <= '0';
+    
+    elsif rising_edge(clk) then
+        if clock_counting = '1' then
+            if unsigned(count_general) = 9 then
+                count_general <= x"0";
+                carry6 <= '1';
+            else    
+                count_general <= std_logic_vector(unsigned(count_general) + 1);
+                carry6 <= '0';
+            end if;
         end if;
     end if;
 end process;
@@ -245,10 +285,10 @@ counter_digit_6: process(clk, rst) begin
         count_6 <= x"0";
         carry5 <= '0';
     end if;
-    if init_counter_minutes = '1' then 
-        count_6 <= x"0";
-    end if;
     if rising_edge(clk) then
+        if init_counter_minutes = '1' then 
+            count_6 <= x"0";
+        end if;
         if carry6 = '1' and clock_counting = '1' then
             if unsigned(count_6) = 9 then
                 count_6 <= x"0";
@@ -268,11 +308,10 @@ counter_digit_5: process(clk, rst) begin
     if rst = '1' then
         count_5 <= x"0";
         carry4 <= '0';
-    end if;
-    if init_counter_minutes = '1' then 
-        count_5 <= x"0";
-    end if;
-    if rising_edge(clk) then
+    elsif rising_edge(clk) then
+        if init_counter_minutes = '1' then 
+            count_5 <= x"0";
+        end if;
         if carry5 = '1' and clock_counting = '1' then
             if unsigned(count_5) = 5 then
                 count_5 <= x"0";
@@ -292,10 +331,11 @@ counter_digit_4: process(clk, rst) begin
         count_4 <= x"0";
         carry3 <= '0';
     end if;
-    if init_counter_minutes = '1' then 
-        count_4 <= std_logic_vector(to_unsigned(minute mod 10, 4)); 
-    end if;
+
     if rising_edge(clk) then
+        if init_counter_minutes = '1' then 
+            count_4 <= std_logic_vector(to_unsigned(minute mod 10, 4)); 
+        end if;
         if carry4 = '1' and clock_counting = '1' then
             if unsigned(count_4) = 9 then
                 count_4 <= x"0";
@@ -314,11 +354,10 @@ counter_digit_3: process(clk, rst) begin
     if rst = '1' then
         count_3 <= x"0";
         carry2 <= '0';
-    end if;
-    if init_counter_minutes = '1' then 
-        count_3 <= std_logic_vector(to_unsigned(minute / 10, 4)); 
-    end if;
-    if rising_edge(clk) then
+    elsif rising_edge(clk) then
+        if init_counter_minutes = '1' then 
+            count_3 <= std_logic_vector(to_unsigned(minute / 10, 4)); 
+        end if;
         if carry3 = '1' and clock_counting = '1' then
             if unsigned(count_3) = 5 then
                 count_3 <= x"0";
@@ -337,11 +376,10 @@ counter_digit_2: process(clk, rst) begin
     if rst = '1' then
         count_2 <= x"0";
         carry1 <= '0';
-    end if;
-    if init_counter_hour = '1' then 
-        count_2 <= std_logic_vector(to_unsigned(hour mod 10, 4)); 
-    end if;
-    if rising_edge(clk) then
+    elsif rising_edge(clk) then
+        if init_counter_hour = '1' then 
+            count_2 <= std_logic_vector(to_unsigned(hour mod 10, 4)); 
+        end if;
         if carry2 = '1' and clock_counting = '1' then
             if unsigned(count_1) = 2 then
                 if unsigned(count_2) = 3 then
@@ -367,11 +405,10 @@ end process;
 counter_digit_1: process(clk, rst) begin
     if rst = '1' then
         count_1 <= x"0";
-    end if;
-    if init_counter_hour = '1' then 
-        count_1 <= std_logic_vector(to_unsigned(hour / 10, 4)); 
-    end if;
-    if rising_edge(clk) then
+    elsif rising_edge(clk) then
+        if init_counter_hour = '1' then 
+            count_1 <= std_logic_vector(to_unsigned(hour / 10, 4)); 
+        end if;
         if carry1 = '1' and clock_counting = '1' then
             if unsigned(count_1) = 2 then
                 count_1 <= x"0";
@@ -484,6 +521,22 @@ button_edge_detection_b3: process(clk, rst) begin
             b3_edge <= '0';
         end if;
         b3_prev <= b3;  
+    end if;
+end process;
+
+-- SEQUENTIAL
+-- Button debouncing for b3
+button_edge_detection_b4: process(clk, rst) begin
+    if rst = '1' then
+        b4_prev <= '0';
+        b4_edge <= '0';
+    elsif rising_edge(clk) then
+        if (b4 = '1' and b4_prev = '0') then
+            b4_edge <= '1';  
+        else
+            b4_edge <= '0';
+        end if;
+        b4_prev <= b4;  
     end if;
 end process;
 end Behavioral;
